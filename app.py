@@ -57,8 +57,8 @@ if collection.count() == 0:
 # ---------------------------------------------------------------------------
 # 4. Generation model
 # ---------------------------------------------------------------------------
-t5_tokenizer = AutoTokenizer.from_pretrained("google/flan-t5-base")
-t5_model = AutoModelForSeq2SeqLM.from_pretrained("google/flan-t5-base")
+t5_tokenizer = AutoTokenizer.from_pretrained("google/flan-t5-small")
+t5_model = AutoModelForSeq2SeqLM.from_pretrained("google/flan-t5-small")
 
 # ---------------------------------------------------------------------------
 # 5. RAG function
@@ -115,7 +115,7 @@ demo = gr.Interface(
     title="Mini RAG Demo",
     description=(
         "Ask a question — answered using BAAI/bge-small-en-v1.5 for retrieval "
-        "and flan-t5-base for generation. Answers outside the sample knowledge "
+        "and flan-t5-small for generation. Answers outside the sample knowledge "
         "base are declined rather than guessed."
     ),
 )
