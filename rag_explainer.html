@@ -1,0 +1,460 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>How our RAG system works</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#0B1120;
+    --bg-panel:#121A30;
+    --bg-panel-2:#182246;
+    --star:#F5F7FA;
+    --muted:#8B93B0;
+    --nebula:#7C5CFC;
+    --nebula-dim:#3C3272;
+    --comet:#22D3B4;
+    --comet-dim:#164A42;
+    --flare:#F5A623;
+    --flare-dim:#5C4116;
+    --line:#232C4A;
+  }
+  *{box-sizing:border-box;}
+  html{scroll-behavior:smooth;}
+  body{
+    margin:0;
+    background:var(--bg);
+    color:var(--star);
+    font-family:'Inter',sans-serif;
+    line-height:1.6;
+  }
+  h1,h2,h3{font-family:'Fraunces',serif; font-weight:500; margin:0 0 0.4em;}
+  code, .mono{font-family:'JetBrains Mono',monospace;}
+  section{max-width:920px; margin:0 auto; padding:80px 24px;}
+  .eyebrow{
+    font-family:'JetBrains Mono',monospace;
+    font-size:12px; letter-spacing:0.12em; text-transform:uppercase;
+    color:var(--comet); margin-bottom:14px; display:flex; align-items:center; gap:10px;
+  }
+  .eyebrow::before{content:""; width:18px; height:1px; background:var(--comet);}
+
+  /* ---------- HERO ---------- */
+  .hero{
+    min-height:92vh; display:flex; flex-direction:column; justify-content:center;
+    position:relative; overflow:hidden; padding:24px;
+  }
+  #starfield{position:absolute; inset:0; z-index:0;}
+  .hero-inner{position:relative; z-index:1; max-width:760px; margin:0 auto; text-align:center;}
+  .hero h1{font-size:clamp(34px,6vw,58px); line-height:1.08; color:var(--star);}
+  .hero h1 em{font-style:normal; color:var(--comet);}
+  .hero p{font-size:18px; color:var(--muted); max-width:560px; margin:20px auto 0;}
+  .scroll-hint{margin-top:56px; font-size:12px; color:var(--muted); font-family:'JetBrains Mono',monospace; letter-spacing:0.08em;}
+  .scroll-hint span{display:inline-block; animation:bob 1.6s ease-in-out infinite;}
+  @keyframes bob{0%,100%{transform:translateY(0);} 50%{transform:translateY(6px);}}
+
+  /* ---------- PIPELINE STEPS ---------- */
+  .step{
+    display:grid; grid-template-columns:56px 1fr; gap:20px;
+    padding:28px 0; border-top:1px solid var(--line);
+  }
+  .step:last-child{border-bottom:1px solid var(--line);}
+  .step-num{
+    font-family:'JetBrains Mono',monospace; font-size:13px; color:var(--comet);
+    padding-top:4px;
+  }
+  .step h3{font-size:22px; margin-bottom:8px;}
+  .step p{color:var(--muted); margin:0 0 10px; font-size:15px;}
+  .step .analogy{
+    background:var(--bg-panel); border-left:2px solid var(--nebula);
+    padding:12px 16px; border-radius:0 8px 8px 0; font-size:14px; color:#C9CEE6;
+    margin-top:10px;
+  }
+  .step .analogy b{color:var(--nebula);}
+
+  /* ---------- INTERACTIVE DEMO ---------- */
+  .demo-card{
+    background:var(--bg-panel); border:1px solid var(--line); border-radius:16px;
+    padding:32px; margin-top:24px;
+  }
+  .demo-card h3{margin-bottom:6px;}
+  .demo-card .hint{color:var(--muted); font-size:14px; margin-bottom:20px;}
+  #vectorSpace{width:100%; height:420px; border-radius:12px; background:var(--bg); touch-action:none; cursor:grab;}
+  .score-row{
+    display:flex; justify-content:space-between; align-items:center;
+    font-family:'JetBrains Mono',monospace; font-size:13px;
+    padding:10px 14px; border-radius:8px; margin-top:8px; background:var(--bg-panel-2);
+  }
+  .score-row .label{color:var(--star);}
+  .score-row .val{color:var(--comet); font-weight:500;}
+
+  /* ---------- CODE BLOCKS ---------- */
+  .code-block{
+    background:#0A0F20; border:1px solid var(--line); border-radius:10px;
+    padding:18px 20px; overflow-x:auto; font-size:13px; margin:14px 0;
+    color:#D7DCF2;
+  }
+  .code-block .c1{color:#6B7394;}
+  .code-block .c2{color:var(--comet);}
+  .code-block .c3{color:var(--flare);}
+
+  /* ---------- GLOSSARY ---------- */
+  .glossary-grid{display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-top:20px;}
+  @media(max-width:640px){.glossary-grid{grid-template-columns:1fr;}}
+  .term{background:var(--bg-panel); border:1px solid var(--line); border-radius:12px; padding:18px 20px;}
+  .term .word{font-family:'JetBrains Mono',monospace; color:var(--flare); font-size:13px; margin-bottom:6px;}
+  .term p{margin:0; color:var(--muted); font-size:14px;}
+
+  /* ---------- GUARDRAIL CALLOUT ---------- */
+  .callout{
+    background:linear-gradient(180deg, var(--bg-panel-2), var(--bg-panel));
+    border:1px solid var(--nebula-dim); border-radius:16px; padding:28px 32px; margin-top:24px;
+  }
+  .callout .eyebrow{color:var(--flare);}
+  .callout .eyebrow::before{background:var(--flare);}
+  .fail-example{
+    display:flex; gap:14px; align-items:flex-start; margin-top:16px;
+    font-size:14px; padding:14px 16px; background:var(--bg); border-radius:10px;
+  }
+  .fail-example .tag{
+    font-family:'JetBrains Mono',monospace; font-size:11px; padding:3px 8px; border-radius:5px;
+    background:#4A1B0C; color:#F0997B; flex-shrink:0; margin-top:2px;
+  }
+
+  footer{text-align:center; padding:60px 24px 80px; color:var(--muted); font-size:13px;}
+</style>
+</head>
+<body>
+
+<!-- ================= HERO ================= -->
+<div class="hero">
+  <svg id="starfield" width="100%" height="100%"></svg>
+  <div class="hero-inner">
+    <div class="eyebrow" style="justify-content:center;">how it works</div>
+    <h1>Teaching a computer<br>to find <em>meaning</em>,<br>not just words</h1>
+    <p>A plain-language walkthrough of the Retrieval-Augmented Generation (RAG)
+       system we built — what happens between typing a question and getting
+       an answer, with no code required to understand it.</p>
+    <div class="scroll-hint"><span>↓</span> scroll to explore</div>
+  </div>
+</div>
+
+<!-- ================= THE BIG IDEA ================= -->
+<section>
+  <div class="eyebrow">the big idea</div>
+  <h2 style="font-size:30px;">Search by meaning, not by keyword</h2>
+  <p style="color:var(--muted); font-size:16px;">
+    A normal search box looks for matching words. If you search "car inventor"
+    but the document says "the automobile was created by," a keyword search
+    finds nothing — even though it's the exact answer.
+  </p>
+  <p style="color:var(--muted); font-size:16px;">
+    RAG solves this by converting text into <b style="color:var(--star)">vectors</b> —
+    lists of numbers that represent meaning, not spelling. Similar ideas end
+    up as nearby points in space, even if they don't share a single word.
+    That's the whole trick. Everything below is just the machinery for doing
+    that at scale, reliably, and grounding an AI's answer in real text instead
+    of a guess.
+  </p>
+</section>
+
+<!-- ================= PIPELINE STEPS ================= -->
+<section>
+  <div class="eyebrow">the pipeline</div>
+  <h2 style="font-size:30px; margin-bottom:20px;">Six steps, start to finish</h2>
+
+  <div class="step">
+    <div class="step-num">01</div>
+    <div>
+      <h3>Chunking</h3>
+      <p>Long documents get cut into smaller pieces — a paragraph or a few
+        sentences each — because comparing whole documents for meaning is too
+        blunt an instrument. Smaller pieces let the system point to the exact
+        passage that answers a question.</p>
+      <div class="analogy"><b>Like</b> tearing a cookbook into individual recipes
+        instead of searching the whole book at once.</div>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="step-num">02</div>
+    <div>
+      <h3>Embedding</h3>
+      <p>Each chunk is fed through a small AI model
+        (<code>BAAI/bge-small-en-v1.5</code>) that outputs 384 numbers
+        summarizing what the text <i>means</i>. This list of numbers is
+        called a <b style="color:var(--star)">vector</b> or an
+        <b style="color:var(--star)">embedding</b>.</p>
+      <div class="analogy"><b>Like</b> giving every sentence GPS coordinates
+        in "meaning-space" — sentences about similar topics land near each other.</div>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="step-num">03</div>
+    <div>
+      <h3>Storage</h3>
+      <p>All those vectors — plus the original text they came from — get saved
+        into a <b style="color:var(--star)">vector database</b> (we used ChromaDB).
+        Think of it as a specialized filing cabinet built for one thing:
+        finding the nearest points in a giant space of numbers, fast.</p>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="step-num">04</div>
+    <div>
+      <h3>Query &amp; retrieval</h3>
+      <p>When you ask a question, it goes through the <i>same</i> embedding
+        model and becomes a vector too. The database then finds which stored
+        chunks are closest to your question's vector — measured by the angle
+        between them, called <b style="color:var(--star)">cosine similarity</b>.
+        Try it below.</p>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="step-num">05</div>
+    <div>
+      <h3>The guardrail</h3>
+      <p>The database always returns its "closest" matches — even if none of
+        them are actually relevant. So before trusting the result, we check:
+        is the best match's score above a minimum threshold? If not, the
+        system says "I don't know" instead of guessing.</p>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="step-num">06</div>
+    <div>
+      <h3>Generation</h3>
+      <p>The retrieved chunks get handed to a language model
+        (<code>flan-t5-base</code>) along with your original question, with
+        an instruction to answer <i>using only this text</i>. The model reads
+        the passage and writes a direct answer — grounded in your documents,
+        not invented from thin air.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ================= INTERACTIVE DEMO ================= -->
+<section>
+  <div class="eyebrow">try it yourself</div>
+  <h2 style="font-size:30px;">Drag the query dot</h2>
+  <div class="demo-card">
+    <h3>Cosine similarity, live</h3>
+    <p class="hint">Each colored star is one stored chunk from our sample database.
+      The white dot is your query. Drag it around — the closer it points in
+      the same direction as a star, the higher its similarity score.</p>
+    <svg id="vectorSpace" viewBox="0 0 600 420"></svg>
+    <div id="scoreBoard"></div>
+  </div>
+</section>
+
+<!-- ================= GUARDRAIL FAILURE CASE ================= -->
+<section>
+  <div class="callout">
+    <div class="eyebrow">a real failure we hit</div>
+    <h3 style="font-size:22px;">"Who invented the car?"</h3>
+    <p style="color:#C9CEE6; font-size:15px;">
+      Our sample database has no chunk about cars. Without a guardrail, here's
+      what happened:
+    </p>
+    <div class="fail-example">
+      <span class="tag">no threshold</span>
+      <span>Retrieval returned the <i>closest available</i> chunk — a paragraph
+        about the Renaissance — because the system always returns
+        <i>something</i>. The generator then latched onto the only "invented
+        by" pattern in that text and confidently answered
+        <b>"Johannes Gutenberg."</b> Wrong, but stated with total confidence.</span>
+    </div>
+    <div class="fail-example">
+      <span class="tag" style="background:#173404; color:#97C459;">with threshold</span>
+      <span>The best match's similarity score (0.227) fell below our cutoff
+        (0.3), so the system replied <b>"I don't have information about that
+        in my documents"</b> instead of guessing.</span>
+    </div>
+    <p style="color:var(--muted); font-size:14px; margin-top:16px;">
+      This is why the guardrail step matters as much as retrieval itself —
+      a RAG system that never admits "I don't know" will confidently
+      hallucinate every time its database doesn't cover the question.
+    </p>
+  </div>
+</section>
+
+<!-- ================= GLOSSARY ================= -->
+<section>
+  <div class="eyebrow">glossary</div>
+  <h2 style="font-size:30px; margin-bottom:8px;">Terms used above</h2>
+  <div class="glossary-grid">
+    <div class="term"><div class="word">RAG</div><p>Retrieval-Augmented Generation — answering questions by first retrieving relevant text, then generating an answer from it, instead of relying purely on what a model memorized during training.</p></div>
+    <div class="term"><div class="word">embedding / vector</div><p>A list of numbers representing the meaning of a piece of text. Similar meanings produce similar numbers.</p></div>
+    <div class="term"><div class="word">chunk</div><p>A small piece of a larger document — small enough to embed meaningfully, big enough to contain a complete thought.</p></div>
+    <div class="term"><div class="word">vector database</div><p>Storage built specifically for finding the nearest vectors to a given point, quickly, even across millions of entries.</p></div>
+    <div class="term"><div class="word">cosine similarity</div><p>A score from -1 to 1 measuring how closely two vectors point in the same direction. Higher means more similar in meaning.</p></div>
+    <div class="term"><div class="word">similarity threshold</div><p>A minimum score requirement — if nothing retrieved clears the bar, the system declines to answer rather than guessing.</p></div>
+    <div class="term"><div class="word">generation model</div><p>The language model that reads retrieved text and writes a natural-language answer grounded in it.</p></div>
+  </div>
+</section>
+
+<footer>Built step by step: chunking → embedding → storage → retrieval → guardrail → generation.</footer>
+
+<script>
+/* ---------- Starfield background ---------- */
+(function(){
+  const svg = document.getElementById('starfield');
+  const ns = "http://www.w3.org/2000/svg";
+  const w = window.innerWidth, h = window.innerHeight;
+  svg.setAttribute('viewBox', `0 0 ${w} ${h}`);
+  for(let i=0;i<90;i++){
+    const c = document.createElementNS(ns,'circle');
+    const r = Math.random()*1.4+0.3;
+    c.setAttribute('cx', Math.random()*w);
+    c.setAttribute('cy', Math.random()*h);
+    c.setAttribute('r', r);
+    c.setAttribute('fill', '#F5F7FA');
+    c.setAttribute('opacity', (Math.random()*0.6+0.2).toFixed(2));
+    svg.appendChild(c);
+  }
+})();
+
+/* ---------- Interactive cosine similarity demo ---------- */
+(function(){
+  const svg = document.getElementById('vectorSpace');
+  const ns = "http://www.w3.org/2000/svg";
+  const cx = 300, cy = 380;
+
+  const chunks = [
+    { label:"Python", color:"#22D3B4", angle: -60, dist: 260 },
+    { label:"Renaissance", color:"#7C5CFC", angle: -25, dist: 250 },
+    { label:"Photosynthesis", color:"#F5A623", angle: -105, dist: 245 },
+    { label:"Stock market", color:"#E24B4A", angle: -145, dist: 255 }
+  ];
+
+  let queryAngle = -80; // degrees, measured from positive x-axis, negative = up
+
+  function polar(cxp, cyp, angleDeg, dist){
+    const rad = angleDeg * Math.PI/180;
+    return { x: cxp + Math.cos(rad)*dist, y: cyp + Math.sin(rad)*dist };
+  }
+
+  function cosSim(a1, a2){
+    const rad = (a1-a2) * Math.PI/180;
+    return Math.cos(rad);
+  }
+
+  function render(){
+    svg.innerHTML = '';
+    // axes
+    const axisH = document.createElementNS(ns,'line');
+    axisH.setAttribute('x1',40); axisH.setAttribute('y1',cy);
+    axisH.setAttribute('x2',560); axisH.setAttribute('y2',cy);
+    axisH.setAttribute('stroke','#232C4A'); axisH.setAttribute('stroke-width','1');
+    svg.appendChild(axisH);
+
+    // chunk stars + lines
+    chunks.forEach(ch=>{
+      const p = polar(cx, cy, ch.angle, ch.dist);
+      const line = document.createElementNS(ns,'line');
+      line.setAttribute('x1',cx); line.setAttribute('y1',cy);
+      line.setAttribute('x2',p.x); line.setAttribute('y2',p.y);
+      line.setAttribute('stroke',ch.color); line.setAttribute('stroke-width','2');
+      line.setAttribute('opacity','0.85');
+      svg.appendChild(line);
+
+      const star = document.createElementNS(ns,'circle');
+      star.setAttribute('cx',p.x); star.setAttribute('cy',p.y);
+      star.setAttribute('r',7);
+      star.setAttribute('fill',ch.color);
+      svg.appendChild(star);
+
+      const label = document.createElementNS(ns,'text');
+      const lx = p.x + (p.x>cx? 12 : -12);
+      label.setAttribute('x', lx);
+      label.setAttribute('y', p.y + (p.y>cy? 16: -10));
+      label.setAttribute('fill','#F5F7FA');
+      label.setAttribute('font-size','13');
+      label.setAttribute('font-family','Inter, sans-serif');
+      label.setAttribute('text-anchor', p.x>cx? 'start':'end');
+      label.textContent = ch.label;
+      svg.appendChild(label);
+    });
+
+    // query vector
+    const qp = polar(cx, cy, queryAngle, 220);
+    const qline = document.createElementNS(ns,'line');
+    qline.setAttribute('x1',cx); qline.setAttribute('y1',cy);
+    qline.setAttribute('x2',qp.x); qline.setAttribute('y2',qp.y);
+    qline.setAttribute('stroke','#F5F7FA'); qline.setAttribute('stroke-width','2');
+    qline.setAttribute('stroke-dasharray','4 3');
+    svg.appendChild(qline);
+
+    const qdot = document.createElementNS(ns,'circle');
+    qdot.setAttribute('id','queryDot');
+    qdot.setAttribute('cx',qp.x); qdot.setAttribute('cy',qp.y);
+    qdot.setAttribute('r',10);
+    qdot.setAttribute('fill','#F5F7FA');
+    qdot.setAttribute('stroke','#0B1120');
+    qdot.setAttribute('stroke-width','2');
+    qdot.style.cursor = 'grab';
+    svg.appendChild(qdot);
+
+    const qlabel = document.createElementNS(ns,'text');
+    qlabel.setAttribute('x', qp.x);
+    qlabel.setAttribute('y', qp.y - 18);
+    qlabel.setAttribute('fill','#F5F7FA');
+    qlabel.setAttribute('font-size','12');
+    qlabel.setAttribute('font-family','JetBrains Mono, monospace');
+    qlabel.setAttribute('text-anchor','middle');
+    qlabel.textContent = 'your query';
+    svg.appendChild(qlabel);
+
+    // origin
+    const origin = document.createElementNS(ns,'circle');
+    origin.setAttribute('cx',cx); origin.setAttribute('cy',cy); origin.setAttribute('r',3);
+    origin.setAttribute('fill','#8B93B0');
+    svg.appendChild(origin);
+
+    renderScores();
+  }
+
+  function renderScores(){
+    const board = document.getElementById('scoreBoard');
+    const scored = chunks.map(ch=>({...ch, score: cosSim(queryAngle, ch.angle)}))
+                          .sort((a,b)=>b.score-a.score);
+    board.innerHTML = scored.map(ch=>`
+      <div class="score-row">
+        <span class="label" style="color:${ch.color}">${ch.label}</span>
+        <span class="val">${ch.score.toFixed(3)}</span>
+      </div>`).join('');
+  }
+
+  function angleFromPointer(evt){
+    const rect = svg.getBoundingClientRect();
+    const scaleX = 600/rect.width, scaleY = 420/rect.height;
+    const px = (evt.clientX - rect.left)*scaleX;
+    const py = (evt.clientY - rect.top)*scaleY;
+    return Math.atan2(py-cy, px-cx) * 180/Math.PI;
+  }
+
+  let dragging = false;
+  svg.addEventListener('pointerdown', (e)=>{
+    dragging = true;
+    svg.setPointerCapture(e.pointerId);
+    svg.style.cursor = 'grabbing';
+  });
+  svg.addEventListener('pointermove', (e)=>{
+    if(!dragging) return;
+    queryAngle = angleFromPointer(e);
+    render();
+  });
+  svg.addEventListener('pointerup', ()=>{ dragging=false; svg.style.cursor='grab'; });
+  svg.addEventListener('pointerleave', ()=>{ dragging=false; svg.style.cursor='grab'; });
+
+  render();
+})();
+</script>
+</body>
+</html>
